@@ -10,10 +10,12 @@ import (
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/property"
+	"github.com/vmware/govmomi/vim25/mo"
 	"golang.org/x/net/context"
 )
 
-func TestAccVSphereVirtualMachine_basic(t *testing.T) {
+func TestAccVSphereVirtualMachine_Basic(t *testing.T) {
 	var vm virtualMachine
 	var locationOpt string
 	var datastoreOpt string
@@ -55,7 +57,7 @@ func TestAccVSphereVirtualMachine_basic(t *testing.T) {
 					resource.TestCheckResourceAttr(
 						"vsphere_virtual_machine.foo", "name", "terraform-test"),
 					resource.TestCheckResourceAttr(
-						"vsphere_virtual_machine.foo", "vcpu", "2"),
+						"vsphere_virtual_machine.foo", "cpu_number", "2"),
 					resource.TestCheckResourceAttr(
 						"vsphere_virtual_machine.foo", "memory", "4096"),
 					resource.TestCheckResourceAttr(
@@ -72,7 +74,7 @@ func TestAccVSphereVirtualMachine_basic(t *testing.T) {
 	})
 }
 
-func TestAccVSphereVirtualMachine_dhcp(t *testing.T) {
+func TestAccVSphereVirtualMachine_Dhcp(t *testing.T) {
 	var vm virtualMachine
 	var locationOpt string
 	var datastoreOpt string
@@ -110,7 +112,7 @@ func TestAccVSphereVirtualMachine_dhcp(t *testing.T) {
 					resource.TestCheckResourceAttr(
 						"vsphere_virtual_machine.bar", "name", "terraform-test"),
 					resource.TestCheckResourceAttr(
-						"vsphere_virtual_machine.bar", "vcpu", "2"),
+						"vsphere_virtual_machine.bar", "cpu_number", "2"),
 					resource.TestCheckResourceAttr(
 						"vsphere_virtual_machine.bar", "memory", "4096"),
 					resource.TestCheckResourceAttr(
@@ -121,6 +123,108 @@ func TestAccVSphereVirtualMachine_dhcp(t *testing.T) {
 						"vsphere_virtual_machine.bar", "network_interface.#", "1"),
 					resource.TestCheckResourceAttr(
 						"vsphere_virtual_machine.bar", "network_interface.0.label", label),
+				),
+			},
+		},
+	})
+}
+
+func TestAccVSphereVirtualMachine_Minimal(t *testing.T) {
+	var vm virtualMachine
+	var locationOpt string
+	var datastoreOpt string
+
+	if v := os.Getenv("VSPHERE_DATACENTER"); v != "" {
+		locationOpt += fmt.Sprintf("    datacenter = \"%s\"\n", v)
+	}
+	if v := os.Getenv("VSPHERE_CLUSTER"); v != "" {
+		locationOpt += fmt.Sprintf("    cluster = \"%s\"\n", v)
+	}
+	if v := os.Getenv("VSPHERE_RESOURCE_POOL"); v != "" {
+		locationOpt += fmt.Sprintf("    resource_pool = \"%s\"\n", v)
+	}
+	if v := os.Getenv("VSPHERE_DATASTORE"); v != "" {
+		datastoreOpt = fmt.Sprintf("        datastore = \"%s\"\n", v)
+	}
+	label := os.Getenv("VSPHERE_NETWORK_LABEL_DHCP")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckVSphereVirtualMachineDestroy,
+		Steps: []resource.TestStep{
+			resource.TestStep{
+				Config: fmt.Sprintf(
+					testAccCheckVSphereVirtualMachineConfig_minimal,
+					locationOpt,
+					label,
+					datastoreOpt,
+				),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckVSphereVirtualMachineExists("vsphere_virtual_machine.buz", &vm),
+					testAccCheckVSphereVirtualMachineAttributes("vsphere_virtual_machine.buz"),
+					resource.TestCheckResourceAttr(
+						"vsphere_virtual_machine.buz", "name", "terraform-test-minimal"),
+					//		resource.TestCheckResourceAttr(
+					//			"vsphere_virtual_machine.buz", "network_interface.#", "1"),
+					//		resource.TestCheckResourceAttr(
+					//			"vsphere_virtual_machine.buz", "network_interface.0.label", label),
+					resource.TestCheckResourceAttr(
+						"vsphere_virtual_machine.buz", "disk.#", "1"),
+					resource.TestCheckResourceAttr(
+						"vsphere_virtual_machine.buz", "disk.0.size", "10"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccVSphereVirtualMachine_MinimalTemplate(t *testing.T) {
+	var vm virtualMachine
+	var locationOpt string
+	var datastoreOpt string
+
+	if v := os.Getenv("VSPHERE_DATACENTER"); v != "" {
+		locationOpt += fmt.Sprintf("    datacenter = \"%s\"\n", v)
+	}
+	if v := os.Getenv("VSPHERE_CLUSTER"); v != "" {
+		locationOpt += fmt.Sprintf("    cluster = \"%s\"\n", v)
+	}
+	if v := os.Getenv("VSPHERE_RESOURCE_POOL"); v != "" {
+		locationOpt += fmt.Sprintf("    resource_pool = \"%s\"\n", v)
+	}
+	if v := os.Getenv("VSPHERE_DATASTORE"); v != "" {
+		datastoreOpt = fmt.Sprintf("        datastore = \"%s\"\n", v)
+	}
+	template := os.Getenv("VSPHERE_TEMPLATE")
+	label := os.Getenv("VSPHERE_NETWORK_LABEL_DHCP")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckVSphereVirtualMachineDestroy,
+		Steps: []resource.TestStep{
+			resource.TestStep{
+				Config: fmt.Sprintf(
+					testAccCheckVSphereVirtualMachineConfig_minimal_template,
+					locationOpt,
+					label,
+					datastoreOpt,
+					template,
+				),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckVSphereVirtualMachineExists("vsphere_virtual_machine.foobar", &vm),
+					testAccCheckVSphereVirtualMachineAttributes("vsphere_virtual_machine.foobar"),
+					resource.TestCheckResourceAttr(
+						"vsphere_virtual_machine.foobar", "name", "terraform-test-minimal-template"),
+					resource.TestCheckResourceAttr(
+						"vsphere_virtual_machine.foobar", "network_interface.#", "1"),
+					resource.TestCheckResourceAttr(
+						"vsphere_virtual_machine.foobar", "network_interface.0.label", label),
+					resource.TestCheckResourceAttr(
+						"vsphere_virtual_machine.foobar", "disk.#", "1"),
+					resource.TestCheckResourceAttr(
+						"vsphere_virtual_machine.foobar", "disk.0.template", template),
 				),
 			},
 		},
@@ -153,6 +257,46 @@ func testAccCheckVSphereVirtualMachineDestroy(s *terraform.State) error {
 	}
 
 	return nil
+}
+
+func testAccCheckVSphereVirtualMachineAttributes(n string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[n]
+		if !ok {
+			return fmt.Errorf("Not found: %s", n)
+		}
+
+		client := testAccProvider.Meta().(*govmomi.Client)
+		finder := find.NewFinder(client.Client, true)
+
+		dc, err := finder.Datacenter(context.TODO(), rs.Primary.Attributes["datacenter"])
+		if err != nil {
+			return fmt.Errorf("error %s", err)
+		}
+		finder = finder.SetDatacenter(dc)
+
+		vm, err := finder.VirtualMachine(context.TODO(), rs.Primary.Attributes["name"])
+		if err != nil {
+			return fmt.Errorf("error %s", err)
+		}
+
+		var mvm mo.VirtualMachine
+
+		collector := property.DefaultCollector(client.Client)
+		if err := collector.RetrieveOne(context.TODO(), vm.Reference(), []string{"guest", "summary", "datastore"}, &mvm); err != nil {
+			return err
+		}
+
+		if mvm.Summary.Config.NumCpu != 1 {
+			return fmt.Errorf("Bad content: %s", mvm.Summary.Config.NumCpu)
+		}
+
+		if mvm.Summary.Config.MemorySizeMB != 4096 {
+			return fmt.Errorf("Bad content: %s", mvm.Summary.Config.MemorySizeMB)
+		}
+
+		return nil
+	}
 }
 
 func testAccCheckVSphereVirtualMachineExists(n string, vm *virtualMachine) resource.TestCheckFunc {
@@ -193,7 +337,7 @@ const testAccCheckVSphereVirtualMachineConfig_basic = `
 resource "vsphere_virtual_machine" "foo" {
     name = "terraform-test"
 %s
-    vcpu = 2
+    cpu_number = 2
     memory = 4096
     gateway = "%s"
     network_interface {
@@ -217,8 +361,36 @@ const testAccCheckVSphereVirtualMachineConfig_dhcp = `
 resource "vsphere_virtual_machine" "bar" {
     name = "terraform-test"
 %s
-    vcpu = 2
+    cpu_number = 2
     memory = 4096
+    network_interface {
+        label = "%s"
+    }
+    disk {
+%s
+        template = "%s"
+    }
+}
+`
+
+const testAccCheckVSphereVirtualMachineConfig_minimal = `
+resource "vsphere_virtual_machine" "buz" {
+    name = "terraform-test-minimal"
+%s
+    network_interface {
+        label = "%s"
+    }
+    disk {
+%s
+        size = 10
+    }
+}
+`
+
+const testAccCheckVSphereVirtualMachineConfig_minimal_template = `
+resource "vsphere_virtual_machine" "foobar" {
+    name = "terraform-test-minimal-template"
+%s
     network_interface {
         label = "%s"
     }

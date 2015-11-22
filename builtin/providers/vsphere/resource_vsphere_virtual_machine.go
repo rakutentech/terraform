@@ -46,7 +46,7 @@ type virtualMachine struct {
 	cluster           string
 	resourcePool      string
 	datastore         string
-	vcpu              int
+	cpuNumber         int
 	memoryMb          int64
 	template          string
 	networkInterfaces []networkInterface
@@ -71,15 +71,17 @@ func resourceVSphereVirtualMachine() *schema.Resource {
 				ForceNew: true,
 			},
 
-			"vcpu": &schema.Schema{
+			"cpu_number": &schema.Schema{
 				Type:     schema.TypeInt,
-				Required: true,
+				Optional: true,
+				Computed: true,
 				ForceNew: true,
 			},
 
 			"memory": &schema.Schema{
 				Type:     schema.TypeInt,
-				Required: true,
+				Optional: true,
+				Computed: true,
 				ForceNew: true,
 			},
 
@@ -216,9 +218,15 @@ func resourceVSphereVirtualMachineCreate(d *schema.ResourceData, meta interface{
 	client := meta.(*govmomi.Client)
 
 	vm := virtualMachine{
-		name:     d.Get("name").(string),
-		vcpu:     d.Get("vcpu").(int),
-		memoryMb: int64(d.Get("memory").(int)),
+		name: d.Get("name").(string),
+	}
+
+	if v, ok := d.GetOk("cpu_number"); ok {
+		vm.cpuNumber = v.(int)
+	}
+
+	if v, ok := d.GetOk("memory"); ok {
+		vm.memoryMb = int64(v.(int))
 	}
 
 	if v, ok := d.GetOk("datacenter"); ok {
@@ -416,9 +424,13 @@ func resourceVSphereVirtualMachineRead(d *schema.ResourceData, meta interface{})
 	}
 
 	d.Set("datacenter", dc)
+	log.Printf("[DEBUG] datacenter: %#v", dc)
 	d.Set("memory", mvm.Summary.Config.MemorySizeMB)
-	d.Set("cpu", mvm.Summary.Config.NumCpu)
+	log.Printf("[DEBUG] memory: %#v", mvm.Summary.Config.MemorySizeMB)
+	d.Set("cpu_number", mvm.Summary.Config.NumCpu)
+	log.Printf("[DEBUG] cpu_number: %#v", mvm.Summary.Config.NumCpu)
 	d.Set("datastore", rootDatastore)
+	log.Printf("[DEBUG] datastore: %#v", rootDatastore)
 
 	// Initialize the connection info
 	if len(networkInterfaces) > 0 {
@@ -447,17 +459,25 @@ func resourceVSphereVirtualMachineDelete(d *schema.ResourceData, meta interface{
 
 	log.Printf("[INFO] Deleting virtual machine: %s", d.Id())
 
-	task, err := vm.PowerOff(context.TODO())
+	state, err := vm.PowerState(context.TODO())
 	if err != nil {
 		return err
 	}
+	if state == "poweredOn" {
+		log.Printf("[DEBUG] Shut down a virtual machine.")
+		task, err := vm.PowerOff(context.TODO())
+		if err != nil {
+			return err
+		}
 
-	err = task.Wait(context.TODO())
-	if err != nil {
-		return err
+		err = task.Wait(context.TODO())
+		if err != nil {
+			return err
+		}
 	}
 
-	task, err = vm.Destroy(context.TODO())
+	log.Printf("[DEBUG] Destroy a virtual machine.")
+	task, err := vm.Destroy(context.TODO())
 	if err != nil {
 		return err
 	}
@@ -788,19 +808,30 @@ func (vm *virtualMachine) createVirtualMachine(c *govmomi.Client) error {
 		if err != nil {
 			return err
 		}
+		log.Printf("[DEBUG] networkDevice: %#v", nd)
 		networkDevices = append(networkDevices, nd)
 	}
+	log.Printf("[DEBUG] networkDevices: %#v", networkDevices)
 
 	// make config spec
 	configSpec := types.VirtualMachineConfigSpec{
-		GuestId:           "otherLinux64Guest",
-		Name:              vm.name,
-		NumCPUs:           vm.vcpu,
-		NumCoresPerSocket: 1,
-		MemoryMB:          vm.memoryMb,
-		DeviceChange:      networkDevices,
+		GuestId:      "otherLinux64Guest",
+		Name:         vm.name,
+		DeviceChange: networkDevices,
 	}
-	log.Printf("[DEBUG] virtual machine config spec: %v", configSpec)
+	if vm.cpuNumber != 0 {
+		configSpec.NumCPUs = vm.cpuNumber
+		configSpec.NumCoresPerSocket = 1
+	} else {
+		configSpec.NumCPUs = 1
+		configSpec.NumCoresPerSocket = 1
+	}
+	if vm.memoryMb != 0 {
+		configSpec.MemoryMB = vm.memoryMb
+	} else {
+		configSpec.MemoryMB = 4096
+	}
+	log.Printf("[DEBUG] virtual machine config spec: %#v", configSpec)
 
 	var datastore *object.Datastore
 	if vm.datastore == "" {
@@ -849,6 +880,10 @@ func (vm *virtualMachine) createVirtualMachine(c *govmomi.Client) error {
 		Device:    scsi,
 	})
 	configSpec.Files = &types.VirtualMachineFileInfo{VmPathName: fmt.Sprintf("[%s]", mds.Name)}
+	for _, dc := range configSpec.DeviceChange {
+		log.Printf("[DEBUG] configSpec.DeviceChange: %#v", dc)
+	}
+	log.Printf("[DEBUG] virtual machine config spec: %#v", configSpec)
 
 	task, err := dcFolders.VmFolder.CreateVM(context.TODO(), configSpec, resourcePool, nil)
 	if err != nil {
@@ -954,7 +989,7 @@ func (vm *virtualMachine) deployVirtualMachine(c *govmomi.Client) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("[DEBUG] relocate spec: %v", relocateSpec)
+	log.Printf("[DEBUG] relocate spec: %#v", relocateSpec)
 
 	// network
 	networkDevices := []types.BaseVirtualDeviceConfigSpec{}
@@ -993,15 +1028,7 @@ func (vm *virtualMachine) deployVirtualMachine(c *govmomi.Client) error {
 		}
 		networkConfigs = append(networkConfigs, config)
 	}
-	log.Printf("[DEBUG] network configs: %v", networkConfigs[0].Adapter)
-
-	// make config spec
-	configSpec := types.VirtualMachineConfigSpec{
-		NumCPUs:           vm.vcpu,
-		NumCoresPerSocket: 1,
-		MemoryMB:          vm.memoryMb,
-	}
-	log.Printf("[DEBUG] virtual machine config spec: %v", configSpec)
+	log.Printf("[DEBUG] network configs: %#v", networkConfigs[0].Adapter)
 
 	// create CustomizationSpec
 	customSpec := types.CustomizationSpec{
@@ -1019,16 +1046,15 @@ func (vm *virtualMachine) deployVirtualMachine(c *govmomi.Client) error {
 		},
 		NicSettingMap: networkConfigs,
 	}
-	log.Printf("[DEBUG] custom spec: %v", customSpec)
+	log.Printf("[DEBUG] custom spec: %#v", customSpec)
 
 	// make vm clone spec
 	cloneSpec := types.VirtualMachineCloneSpec{
 		Location: relocateSpec,
 		Template: false,
-		Config:   &configSpec,
 		PowerOn:  false,
 	}
-	log.Printf("[DEBUG] clone spec: %v", cloneSpec)
+	log.Printf("[DEBUG] clone spec: %#v", cloneSpec)
 
 	task, err := template.Clone(context.TODO(), dcFolders.VmFolder, vm.name, cloneSpec)
 	if err != nil {
@@ -1045,6 +1071,34 @@ func (vm *virtualMachine) deployVirtualMachine(c *govmomi.Client) error {
 		return err
 	}
 	log.Printf("[DEBUG] new vm: %v", newVM)
+
+	// make config spec
+	configFlag := false
+	var configSpec types.VirtualMachineConfigSpec
+	if vm.cpuNumber != 0 {
+		configSpec.NumCPUs = vm.cpuNumber
+		configSpec.NumCoresPerSocket = 1
+		configFlag = true
+	}
+	if vm.memoryMb != 0 {
+		configSpec.MemoryMB = vm.memoryMb
+		configFlag = true
+	}
+	log.Printf("[DEBUG] virtual machine config spec: %#v", configSpec)
+
+	if configFlag {
+		log.Printf("[DEBUG] virtual machine reconfigure start")
+		task, err = newVM.Reconfigure(context.TODO(), configSpec)
+		if err != nil {
+			return err
+		}
+
+		_, err = task.WaitForResult(context.TODO(), nil)
+		if err != nil {
+			return err
+		}
+		log.Printf("[DEBUG] virtual machine reconfigure finished")
+	}
 
 	devices, err := newVM.Device(context.TODO())
 	if err != nil {
