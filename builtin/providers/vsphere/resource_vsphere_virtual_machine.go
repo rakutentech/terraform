@@ -363,7 +363,7 @@ func resourceVSphereVirtualMachineRead(d *schema.ResourceData, meta interface{})
 	var mvm mo.VirtualMachine
 
 	collector := property.DefaultCollector(client.Client)
-	if err := collector.RetrieveOne(context.TODO(), vm.Reference(), []string{"guest", "summary", "datastore"}, &mvm); err != nil {
+	if err := collector.RetrieveOne(context.TODO(), vm.Reference(), []string{"guest", "summary", "network", "datastore"}, &mvm); err != nil {
 		return err
 	}
 
@@ -372,21 +372,28 @@ func resourceVSphereVirtualMachineRead(d *schema.ResourceData, meta interface{})
 	log.Printf("[DEBUG] %#v", mvm.Guest.Net)
 
 	networkInterfaces := make([]map[string]interface{}, 0)
-	for _, v := range mvm.Guest.Net {
-		if v.DeviceConfigId >= 0 {
-			log.Printf("[DEBUG] %#v", v.Network)
-			networkInterface := make(map[string]interface{})
-			networkInterface["label"] = v.Network
-			if len(v.IpAddress) > 0 {
-				log.Printf("[DEBUG] %#v", v.IpAddress[0])
-				networkInterface["ip_address"] = v.IpAddress[0]
-
-				m := net.CIDRMask(v.IpConfig.IpAddress[0].PrefixLength, 32)
-				subnetMask := net.IPv4(m[0], m[1], m[2], m[3])
-				networkInterface["subnet_mask"] = subnetMask.String()
-				log.Printf("[DEBUG] %#v", subnetMask.String())
-			}
-			networkInterfaces = append(networkInterfaces, networkInterface)
+	for _, network := range mvm.Network {
+		log.Printf("[DEBUG] %#v", network)
+		n := object.NewDistributedVirtualPortgroup(client.Client, network)
+		var dvp mo.DistributedVirtualPortgroup
+		if err := collector.RetrieveOne(context.TODO(), n.Reference(), []string{"name"}, &dvp); err != nil {
+			return err
+		}
+		log.Printf("[DEBUG] %#v", dvp.Name)
+		networkInterface := make(map[string]interface{})
+		networkInterface["label"] = dvp.Name
+		networkInterface["ip_address"] = ""
+		networkInterface["subnet_mask"] = ""
+		networkInterfaces = append(networkInterfaces, networkInterface)
+	}
+	for i, v := range mvm.Guest.Net {
+		if v.DeviceConfigId >= 0 && len(v.IpAddress) > 0 {
+			log.Printf("[DEBUG] %#v", v.IpAddress[0])
+			networkInterfaces[i]["ip_address"] = v.IpAddress[0]
+			m := net.CIDRMask(v.IpConfig.IpAddress[0].PrefixLength, 32)
+			subnetMask := net.IPv4(m[0], m[1], m[2], m[3])
+			networkInterfaces[i]["subnet_mask"] = subnetMask.String()
+			log.Printf("[DEBUG] %#v", subnetMask.String())
 		}
 	}
 	log.Printf("[DEBUG] networkInterfaces: %#v", networkInterfaces)
@@ -445,19 +452,26 @@ func resourceVSphereVirtualMachineDelete(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	log.Printf("[INFO] Deleting virtual machine: %s", d.Id())
-
-	task, err := vm.PowerOff(context.TODO())
+	state, err := vm.PowerState(context.TODO())
 	if err != nil {
 		return err
 	}
+	log.Printf("[DEBUG] %#v", state)
+	if state == "poweredOn" {
+		log.Printf("[DEBUG] Powering off a virtual machine: %s", d.Id())
+		task, err := vm.PowerOff(context.TODO())
+		if err != nil {
+			return err
+		}
 
-	err = task.Wait(context.TODO())
-	if err != nil {
-		return err
+		err = task.Wait(context.TODO())
+		if err != nil {
+			return err
+		}
 	}
 
-	task, err = vm.Destroy(context.TODO())
+	log.Printf("[INFO] Deleting a virtual machine: %s", d.Id())
+	task, err := vm.Destroy(context.TODO())
 	if err != nil {
 		return err
 	}
