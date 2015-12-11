@@ -1,9 +1,54 @@
-## 0.6.8 (Unreleased)
+## 0.6.9 (Unreleased)
+
+FEATURES:
+  * **New provider: `vcd` - VMware vCloud Director** [GH-3785]
+  * **New provider: `postgresql` - Create PostgreSQL databases and roles** [GH-3653]
+  * **New resource: `google_pubsub_topic`** [GH-3671]
+  * **New resource: `google_pubsub_subscription`** [GH-3671]
+  * **New resource: `tls_locally_signed_cert`** [GH-3930]
+
+IMPROVEMENTS:
+
+  * core: Change set internals for performance improvements [GH-3992]
+  * core: Support HTTP basic auth in consul remote state [GH-4166]
+  * provider/aws: Add `placement_group` as an option for `aws_autoscaling_group` [GH-3704]
+  * provider/aws: Add support for DynamoDB Table StreamSpecifications [GH-4208]
+  * provider/aws: Add `name_prefix` to Security Groups [GH-4167]
+  * provider/cloudstack: performance improvements [GH-4150]
+  * provider/docker: Add support for setting the entry point on `docker_container` resources [GH-3761]
+  * provider/docker: Add support for setting the restart policy on `docker_container` resources [GH-3761]
+  * provider/docker: Add support for setting memory, swap and CPU shares on `docker_container` resources [GH-3761]
+  * provider/docker: Add support for setting labels on `docker_container` resources [GH-3761]
+  * provider/docker: Add support for setting log driver and options on `docker_container` resources [GH-3761]
+  * provider/vsphere: Add support for custom vm params on `vsphere_virtual_machine` [GH-3867]
+  * provider/vsphere: Rename vcenter_server config parameter to something clearer [GH-3718]
+  * provider/vsphere: Make allow_unverified_ssl a configuable on the provider [GH-3933]
+  * provider/vsphere: Add folder handling for folder-qualified vm names [GH-3939]
+  * provider/openstack: Increase instance timeout from 10 to 30 minutes [GH-4223]
+
+BUG FIXES:
+
+  * core: skip provider input for deprecated fields [GH-4193]
+  * core: Fix issue which could cause fields that become empty to retain old values in the state [GH-3257]
+  * provider/docker: Fix an issue running with Docker Swarm by looking up containers by ID instead of name [GH-4148]
+  * provider/openstack: Better handling of load balancing resource state changes [GH-3926]
+  * provider/aws: Skip `source_security_group_id` determination logic for Classic ELBs [GH-4075]
+  * provider/aws: Fix issue destroy Route 53 zone/record if it no longer exists [GH-4198]
+  * provider/aws: Fix issue force destroying a versioned S3 bucket [GH-4168]
+  * provider/aws: Update DB Replica to honor storage type [GH-4155]
+  * provider/aws: Fix issue creating AWS RDS replicas across regions [GH-4215]
+  * provider/aws: Fix issue with finding S3 Hosted Zone ID for eu-central-1 region [GH-4236]
+  * provider/digitalocean: Fix issue where a floating IP attached to a missing droplet causes a panic [GH-4214]
+  * provider/openstack: Handle volumes in "deleting" state [GH-4204]
+  * provider/vsphere: Create and attach additional disks before bootup [GH-4196]
+
+## 0.6.8 (December 2, 2015)
 
 FEATURES:
 
-  * **New resource: `digitalocean_floating_ip`** [GH-3748]
   * **New provider: `statuscake`** [GH-3340]
+  * **New resource: `digitalocean_floating_ip`** [GH-3748]
+  * **New resource: `aws_lambda_event_source_mapping`** [GH-4093]
 
 IMPROVEMENTS:
 
@@ -11,11 +56,17 @@ IMPROVEMENTS:
   * provider/aws: Make `publically_accessible` on an `aws_db_instance` update existing instances instead of forcing new ones [GH-3895]
   * provider/aws: Allow `block_duration_minutes` to be set for spot instance requests [GH-4071]
   * provider/aws: Make setting `acl` on S3 buckets update existing buckets instead of forcing new ones [GH-4080]
+  * provider/aws: Make updates to `assume_role_policy` modify existing IAM roles instead of forcing new ones [GH-4107]
 
 BUG FIXES:
 
+  * core: Fix a bug which prevented HEREDOC syntax being used in lists [GH-4078]
+  * core: Fix a bug which prevented HEREDOC syntax where the anchor ends in a number [GH-4128]
+  * core: Fix a bug which prevented HEREDOC syntax being used with Windows line endings [GH-4069]
   * provider/aws: Fix a bug which could result in a panic when reading EC2 metadata [GH-4024]
   * provider/aws: Fix issue recreating security group rule if it has been destroyed [GH-4050]
+  * provider/aws: Fix issue with some attributes in Spot Instance Requests returning as nil [GH-4132]
+  * provider/aws: Fix issue where SPF records in Route 53 could show differences with no modification to the configuration [GH-4108]
   * provisioner/chef: Fix issue with path separators breaking the Chef provisioner on Windows [GH-4041]
 
 ## 0.6.7 (November 23, 2015)
