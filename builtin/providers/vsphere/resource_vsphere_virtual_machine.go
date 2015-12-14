@@ -186,6 +186,20 @@ func resourceVSphereVirtualMachine() *schema.Resource {
 							ForceNew: true,
 						},
 
+						"ip_address": &schema.Schema{
+							Type:       schema.TypeString,
+							Optional:   true,
+							Computed:   true,
+							Deprecated: "Please use ipv4_address",
+						},
+
+						"subnet_mask": &schema.Schema{
+							Type:       schema.TypeString,
+							Optional:   true,
+							Computed:   true,
+							Deprecated: "Please use ipv4_prefix_length",
+						},
+
 						"ipv4_address": &schema.Schema{
 							Type:     schema.TypeString,
 							Optional: true,
@@ -337,6 +351,19 @@ func resourceVSphereVirtualMachineCreate(d *schema.ResourceData, meta interface{
 		for i, v := range vL.([]interface{}) {
 			network := v.(map[string]interface{})
 			networks[i].label = network["label"].(string)
+			if v, ok := network["ip_address"].(string); ok && v != "" {
+				networks[i].ipv4Address = v
+			}
+			if v, ok := network["subnet_mask"].(string); ok && v != "" {
+				ip := net.ParseIP(v).To4()
+				if ip != nil {
+					mask := net.IPv4Mask(ip[0], ip[1], ip[2], ip[3])
+					pl, _ := mask.Size()
+					networks[i].ipv4PrefixLength = pl
+				} else {
+					return fmt.Errorf("subnet_mask parameter is invalid.")
+				}
+			}
 			if v, ok := network["ipv4_address"].(string); ok && v != "" {
 				networks[i].ipv4Address = v
 			}

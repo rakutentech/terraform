@@ -56,6 +56,12 @@ The `network_interface` block supports:
 * `ipv4_address` - (Optional) Static IP to assign to this network interface. Interface will use DHCP if this is left blank. Currently only IPv4 IP addresses are supported.
 * `ipv4_prefix_length` - (Optional) prefix length to use when statically assigning an IP.
 
+The following arguments are maintained for backwards compatibility and may be
+removed in a future version:
+
+* `ip_address` - __Deprecated, please use `ipv4_address` instead_.
+* `subnet_mask` - __Deprecated, please use `ipv4_prefix_length` instead_.
+
 The `disk` block supports:
 
 * `template` - (Required if size not provided) Template for this disk.
