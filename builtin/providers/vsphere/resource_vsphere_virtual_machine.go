@@ -1308,17 +1308,6 @@ func (vm *virtualMachine) deployVirtualMachine(c *govmomi.Client) error {
 		}
 	}
 
-	taskb, err := newVM.Customize(context.TODO(), customSpec)
-	if err != nil {
-		return err
-	}
-
-	_, err = taskb.WaitForResult(context.TODO(), nil)
-	if err != nil {
-		return err
-	}
-	log.Printf("[DEBUG] VM customization finished")
-
 	for i := 1; i < len(vm.hardDisks); i++ {
 		err = addHardDisk(newVM, vm.hardDisks[i].size, vm.hardDisks[i].iops, "eager_zeroed")
 		if err != nil {
@@ -1332,6 +1321,17 @@ func (vm *virtualMachine) deployVirtualMachine(c *govmomi.Client) error {
 	}
 
 	log.Printf("[DEBUG] virtual machine config spec: %v", configSpec)
+
+	taskb, err := newVM.Customize(context.TODO(), customSpec)
+	if err != nil {
+		return err
+	}
+
+	_, err = taskb.WaitForResult(context.TODO(), nil)
+	if err != nil {
+		return err
+	}
+	log.Printf("[DEBUG] VM customization finished")
 
 	newVM.PowerOn(context.TODO())
 

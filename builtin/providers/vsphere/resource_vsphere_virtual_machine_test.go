@@ -421,9 +421,9 @@ func testAccCheckVSphereVirtualMachineDestroy(s *terraform.State) error {
 			}
 		}
 
-		_, err = object.NewSearchIndex(client.Client).FindChild(context.TODO(), folder, rs.Primary.Attributes["name"])
+		v, err := object.NewSearchIndex(client.Client).FindChild(context.TODO(), folder, rs.Primary.Attributes["name"])
 
-		if err == nil {
+		if v != nil {
 			return fmt.Errorf("Record still exists")
 		}
 	}
