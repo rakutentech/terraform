@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/hashicorp/hil/ast"
 	"github.com/hashicorp/terraform/config"
-	"github.com/hashicorp/terraform/config/lang/ast"
 	"github.com/hashicorp/terraform/config/module"
 )
 
@@ -73,6 +73,8 @@ func (i *Interpolater) Values(
 			err = i.valueResourceVar(scope, n, v, result)
 		case *config.SelfVariable:
 			err = i.valueSelfVar(scope, n, v, result)
+		case *config.SimpleVariable:
+			err = i.valueSimpleVar(scope, n, v, result)
 		case *config.UserVariable:
 			err = i.valueUserVar(scope, n, v, result)
 		default:
@@ -236,6 +238,10 @@ func (i *Interpolater) valueSelfVar(
 	n string,
 	v *config.SelfVariable,
 	result map[string]ast.Variable) error {
+	if scope == nil || scope.Resource == nil {
+		return fmt.Errorf(
+			"%s: invalid scope, self variables are only valid on resources", n)
+	}
 	rv, err := config.NewResourceVariable(fmt.Sprintf(
 		"%s.%s.%d.%s",
 		scope.Resource.Type,
@@ -247,6 +253,19 @@ func (i *Interpolater) valueSelfVar(
 	}
 
 	return i.valueResourceVar(scope, n, rv, result)
+}
+
+func (i *Interpolater) valueSimpleVar(
+	scope *InterpolationScope,
+	n string,
+	v *config.SimpleVariable,
+	result map[string]ast.Variable) error {
+	// SimpleVars are never handled by Terraform's interpolator
+	result[n] = ast.Variable{
+		Value: config.UnknownVariableValue,
+		Type:  ast.TypeString,
+	}
+	return nil
 }
 
 func (i *Interpolater) valueUserVar(
@@ -504,6 +523,16 @@ func (i *Interpolater) interpolateListAttribute(
 	log.Printf("[DEBUG] Interpolating computed list attribute %s (%s)",
 		resourceID, attr)
 
+	// In Terraform's internal dotted representation of list-like attributes, the
+	// ".#" count field is marked as unknown to indicate "this whole list is
+	// unknown". We must honor that meaning here so computed references can be
+	// treated properly during the plan phase.
+	if attr == config.UnknownVariableValue {
+		return attr, nil
+	}
+
+	// Otherwise we gather the values from the list-like attribute and return
+	// them.
 	var members []string
 	numberedListMember := regexp.MustCompile("^" + resourceID + "\\.[0-9]+$")
 	for id, value := range attributes {

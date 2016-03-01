@@ -3,10 +3,8 @@ package openstack
 import (
 	"fmt"
 	"log"
-	"strconv"
 	"time"
 
-	"github.com/hashicorp/terraform/helper/hashcode"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 
@@ -39,7 +37,7 @@ func resourceNetworkingPortV2() *schema.Resource {
 				ForceNew: true,
 			},
 			"admin_state_up": &schema.Schema{
-				Type:     schema.TypeString,
+				Type:     schema.TypeBool,
 				Optional: true,
 				ForceNew: false,
 				Computed: true,
@@ -62,15 +60,13 @@ func resourceNetworkingPortV2() *schema.Resource {
 				ForceNew: true,
 				Computed: true,
 			},
-			"security_groups": &schema.Schema{
+			"security_group_ids": &schema.Schema{
 				Type:     schema.TypeSet,
 				Optional: true,
 				ForceNew: false,
 				Computed: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
-				Set: func(v interface{}) int {
-					return hashcode.String(v.(string))
-				},
+				Set:      schema.HashString,
 			},
 			"device_id": &schema.Schema{
 				Type:     schema.TypeString,
@@ -78,10 +74,11 @@ func resourceNetworkingPortV2() *schema.Resource {
 				ForceNew: true,
 				Computed: true,
 			},
-			"fixed_ips": &schema.Schema{
+			"fixed_ip": &schema.Schema{
 				Type:     schema.TypeList,
 				Optional: true,
 				ForceNew: false,
+				Computed: true,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"subnet_id": &schema.Schema{
@@ -90,7 +87,8 @@ func resourceNetworkingPortV2() *schema.Resource {
 						},
 						"ip_address": &schema.Schema{
 							Type:     schema.TypeString,
-							Required: true,
+							Optional: true,
+							Computed: true,
 						},
 					},
 				},
@@ -128,7 +126,7 @@ func resourceNetworkingPortV2Create(d *schema.ResourceData, meta interface{}) er
 	log.Printf("[DEBUG] Waiting for OpenStack Neutron Port (%s) to become available.", p.ID)
 
 	stateConf := &resource.StateChangeConf{
-		Target:     "ACTIVE",
+		Target:     []string{"ACTIVE"},
 		Refresh:    waitForNetworkPortActive(networkingClient, p.ID),
 		Timeout:    2 * time.Minute,
 		Delay:      5 * time.Second,
@@ -157,14 +155,23 @@ func resourceNetworkingPortV2Read(d *schema.ResourceData, meta interface{}) erro
 	log.Printf("[DEBUG] Retreived Port %s: %+v", d.Id(), p)
 
 	d.Set("name", p.Name)
-	d.Set("admin_state_up", strconv.FormatBool(p.AdminStateUp))
+	d.Set("admin_state_up", p.AdminStateUp)
 	d.Set("network_id", p.NetworkID)
 	d.Set("mac_address", p.MACAddress)
 	d.Set("tenant_id", p.TenantID)
 	d.Set("device_owner", p.DeviceOwner)
-	d.Set("security_groups", p.SecurityGroups)
+	d.Set("security_group_ids", p.SecurityGroups)
 	d.Set("device_id", p.DeviceID)
-	d.Set("fixed_ips", p.FixedIPs)
+
+	// Convert FixedIPs to list of map
+	var ips []map[string]interface{}
+	for _, ipObject := range p.FixedIPs {
+		ip := make(map[string]interface{})
+		ip["subnet_id"] = ipObject.SubnetID
+		ip["ip_address"] = ipObject.IPAddress
+		ips = append(ips, ip)
+	}
+	d.Set("fixed_ip", ips)
 
 	return nil
 }
@@ -190,7 +197,7 @@ func resourceNetworkingPortV2Update(d *schema.ResourceData, meta interface{}) er
 		updateOpts.DeviceOwner = d.Get("device_owner").(string)
 	}
 
-	if d.HasChange("security_groups") {
+	if d.HasChange("security_group_ids") {
 		updateOpts.SecurityGroups = resourcePortSecurityGroupsV2(d)
 	}
 
@@ -198,7 +205,7 @@ func resourceNetworkingPortV2Update(d *schema.ResourceData, meta interface{}) er
 		updateOpts.DeviceID = d.Get("device_id").(string)
 	}
 
-	if d.HasChange("fixed_ips") {
+	if d.HasChange("fixed_ip") {
 		updateOpts.FixedIPs = resourcePortFixedIpsV2(d)
 	}
 
@@ -221,7 +228,7 @@ func resourceNetworkingPortV2Delete(d *schema.ResourceData, meta interface{}) er
 
 	stateConf := &resource.StateChangeConf{
 		Pending:    []string{"ACTIVE"},
-		Target:     "DELETED",
+		Target:     []string{"DELETED"},
 		Refresh:    waitForNetworkPortDelete(networkingClient, d.Id()),
 		Timeout:    2 * time.Minute,
 		Delay:      5 * time.Second,
@@ -238,7 +245,7 @@ func resourceNetworkingPortV2Delete(d *schema.ResourceData, meta interface{}) er
 }
 
 func resourcePortSecurityGroupsV2(d *schema.ResourceData) []string {
-	rawSecurityGroups := d.Get("security_groups").(*schema.Set)
+	rawSecurityGroups := d.Get("security_group_ids").(*schema.Set)
 	groups := make([]string, rawSecurityGroups.Len())
 	for i, raw := range rawSecurityGroups.List() {
 		groups[i] = raw.(string)
@@ -246,8 +253,13 @@ func resourcePortSecurityGroupsV2(d *schema.ResourceData) []string {
 	return groups
 }
 
-func resourcePortFixedIpsV2(d *schema.ResourceData) []ports.IP {
-	rawIP := d.Get("fixed_ips").([]interface{})
+func resourcePortFixedIpsV2(d *schema.ResourceData) interface{} {
+	rawIP := d.Get("fixed_ip").([]interface{})
+
+	if len(rawIP) == 0 {
+		return nil
+	}
+
 	ip := make([]ports.IP, len(rawIP))
 	for i, raw := range rawIP {
 		rawMap := raw.(map[string]interface{})
@@ -256,14 +268,14 @@ func resourcePortFixedIpsV2(d *schema.ResourceData) []ports.IP {
 			IPAddress: rawMap["ip_address"].(string),
 		}
 	}
-
 	return ip
+
 }
 
 func resourcePortAdminStateUpV2(d *schema.ResourceData) *bool {
 	value := false
 
-	if raw, ok := d.GetOk("admin_state_up"); ok && raw == "true" {
+	if raw, ok := d.GetOk("admin_state_up"); ok && raw == true {
 		value = true
 	}
 
