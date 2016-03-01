@@ -67,6 +67,7 @@ func resourceVSphereVirtualMachine() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceVSphereVirtualMachineCreate,
 		Read:   resourceVSphereVirtualMachineRead,
+		Update: resourceVSphereVirtualMachineUpdate,
 		Delete: resourceVSphereVirtualMachineDelete,
 
 		Schema: map[string]*schema.Schema{
@@ -79,56 +80,56 @@ func resourceVSphereVirtualMachine() *schema.Resource {
 			"vcpu": &schema.Schema{
 				Type:     schema.TypeInt,
 				Required: true,
-				ForceNew: true,
+				ForceNew: false,
 			},
 
 			"memory": &schema.Schema{
 				Type:     schema.TypeInt,
 				Required: true,
-				ForceNew: true,
+				ForceNew: false,
 			},
 
 			"memory_reservation": &schema.Schema{
 				Type:     schema.TypeInt,
 				Optional: true,
-				ForceNew: true,
+				ForceNew: false,
 			},
 
 			"datacenter": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
-				ForceNew: true,
+				ForceNew: false,
 			},
 
 			"cluster": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
-				ForceNew: true,
+				ForceNew: false,
 			},
 
 			"resource_pool": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
-				ForceNew: true,
+				ForceNew: false,
 			},
 
 			"gateway": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
-				ForceNew: true,
+				ForceNew: false,
 			},
 
 			"domain": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
-				ForceNew: true,
+				ForceNew: false,
 				Default:  "vsphere.local",
 			},
 
 			"time_zone": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
-				ForceNew: true,
+				ForceNew: false,
 				Default:  "Etc/UTC",
 			},
 
@@ -136,26 +137,26 @@ func resourceVSphereVirtualMachine() *schema.Resource {
 				Type:     schema.TypeList,
 				Optional: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
-				ForceNew: true,
+				ForceNew: false,
 			},
 
 			"dns_servers": &schema.Schema{
 				Type:     schema.TypeList,
 				Optional: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
-				ForceNew: true,
+				ForceNew: false,
 			},
 
 			"network_interface": &schema.Schema{
 				Type:     schema.TypeList,
 				Required: true,
-				ForceNew: true,
+				ForceNew: false,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"label": &schema.Schema{
 							Type:     schema.TypeString,
 							Required: true,
-							ForceNew: true,
+							ForceNew: false,
 						},
 
 						"ip_address": &schema.Schema{
@@ -184,31 +185,31 @@ func resourceVSphereVirtualMachine() *schema.Resource {
 			"disk": &schema.Schema{
 				Type:     schema.TypeList,
 				Required: true,
-				ForceNew: true,
+				ForceNew: false,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"template": &schema.Schema{
 							Type:     schema.TypeString,
 							Optional: true,
-							ForceNew: true,
+							ForceNew: false,
 						},
 
 						"datastore": &schema.Schema{
 							Type:     schema.TypeString,
 							Optional: true,
-							ForceNew: true,
+							ForceNew: false,
 						},
 
 						"size": &schema.Schema{
 							Type:     schema.TypeInt,
 							Optional: true,
-							ForceNew: true,
+							ForceNew: false,
 						},
 
 						"iops": &schema.Schema{
 							Type:     schema.TypeInt,
 							Optional: true,
-							ForceNew: true,
+							ForceNew: false,
 						},
 					},
 				},
@@ -217,7 +218,7 @@ func resourceVSphereVirtualMachine() *schema.Resource {
 			"boot_delay": &schema.Schema{
 				Type:     schema.TypeInt,
 				Optional: true,
-				ForceNew: true,
+				ForceNew: false,
 			},
 		},
 	}
@@ -358,7 +359,8 @@ func resourceVSphereVirtualMachineCreate(d *schema.ResourceData, meta interface{
 	d.SetId(vm.name)
 	log.Printf("[INFO] Created virtual machine: %s", d.Id())
 
-	return resourceVSphereVirtualMachineRead(d, meta)
+	// Update if we need to
+	return resourceVSphereVirtualMachineUpdate(d, meta)
 }
 
 func resourceVSphereVirtualMachineRead(d *schema.ResourceData, meta interface{}) error {
@@ -446,6 +448,48 @@ func resourceVSphereVirtualMachineRead(d *schema.ResourceData, meta interface{})
 	}
 
 	return nil
+}
+
+func resourceVSphereVirtualMachineUpdate(d *schema.ResourceData, meta interface{}) error {
+	client := meta.(*govmomi.Client)
+	vm := virtualMachine {
+		name:     d.Get("name").(string),
+		vcpu:     d.Get("vcpu").(int),
+		memoryMb: int64(d.Get("memory").(int)),
+	}
+
+	if v, ok := d.GetOk("datacenter"); ok {
+		vm.datacenter = v.(string)
+	}
+
+	if vL, ok := d.GetOk("disk"); ok {
+		disks := make([]hardDisk, len(vL.([]interface{})))
+		for i, v := range vL.([]interface{}) {
+			disk := v.(map[string]interface{})
+			// disk size
+			if v, ok := disk["size"].(int); ok && v != 0 {
+				disks[i].size = int64(v)
+			} else {
+				return fmt.Errorf("If template argument is not specified, size argument is required.")
+			}
+			// disk iops
+			if v, ok := disk["iops"].(int); ok && v != 0 {
+				disks[i].iops = int64(v)
+			}
+		}
+		vm.hardDisks = disks
+		log.Printf("[DEBUG] disk init: %v", disks)
+	}
+
+	err := vm.updateVirtualMachine(client)
+	if err != nil {
+		return err
+	}
+
+	d.SetId(vm.name)
+	log.Printf("[INFO] Updated virtual machine: %s", d.Id())
+
+	return resourceVSphereVirtualMachineRead(d, meta)
 }
 
 func resourceVSphereVirtualMachineDelete(d *schema.ResourceData, meta interface{}) error {
@@ -1099,7 +1143,7 @@ func (vm *virtualMachine) deployVirtualMachine(c *govmomi.Client) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("[DEBUG]VM customization finished")
+	log.Printf("[DEBUG] VM customization finished")
 
 	newVM.PowerOn(context.TODO())
 
@@ -1116,4 +1160,58 @@ func (vm *virtualMachine) deployVirtualMachine(c *govmomi.Client) error {
 		}
 	}
 	return nil
+}
+
+// updateVirtualMchine update existing VirtualMachine.
+func (vm *virtualMachine) updateVirtualMachine(client *govmomi.Client) error {
+	dc, err := getDatacenter(client, vm.datacenter)
+	if err != nil {
+		return err
+	}
+
+	finder := find.NewFinder(client.Client, true)
+	finder = finder.SetDatacenter(dc)
+
+	newVM, err := finder.VirtualMachine(context.TODO(), vm.name)
+	if err != nil {
+		return err
+	}
+
+	devices, err := newVM.Device(context.TODO())
+	if err != nil {
+		log.Printf("[DEBUG] Any devices can't be found")
+		return err
+	}
+
+	log.Printf("[DEBUG] hardDisks = %v", vm.hardDisks)
+
+	var cnt int = 0
+	for _, device := range devices {
+		if disk, ok := device.(*types.VirtualDisk); ok {
+			log.Printf("[DEBUG] cnt = %v", cnt)
+			log.Printf("[DEBUG] disk = %#v", disk)
+			log.Printf("[DEBUG] disk size = %#v", disk.CapacityInKB)
+			log.Printf("[DEBUG] disk iops = %#v", disk.StorageIOAllocation.Limit)
+
+			disk.CapacityInKB = int64(vm.hardDisks[cnt].size * 1024 * 1024)
+			disk.StorageIOAllocation.Limit = vm.hardDisks[cnt].iops
+			// err = newVM.EditDevice(context.TODO(), disk)
+			cnt++
+		}
+	}
+	deviceChange, err := devices.ConfigSpec(types.VirtualDeviceConfigSpecOperationEdit)
+	if err != nil {
+		return err
+	}
+	configSpec := types.VirtualMachineConfigSpec{
+		DeviceChange: deviceChange,
+	}
+	log.Printf("[DEBUG] virtual machine config spec: %v", configSpec)
+
+	task, err := newVM.Reconfigure(context.TODO(), configSpec)
+	if err != nil {
+		return err
+	}
+
+	return task.Wait(context.TODO())
 }
