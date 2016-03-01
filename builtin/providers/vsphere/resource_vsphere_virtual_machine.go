@@ -553,7 +553,7 @@ func resourceVSphereVirtualMachineRead(d *schema.ResourceData, meta interface{})
 
 func resourceVSphereVirtualMachineUpdate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*govmomi.Client)
-	vm := virtualMachine {
+	vm := virtualMachine{
 		name:     d.Get("name").(string),
 		vcpu:     d.Get("vcpu").(int),
 		memoryMb: int64(d.Get("memory").(int)),
@@ -1210,8 +1210,8 @@ func (vm *virtualMachine) deployVirtualMachine(c *govmomi.Client) error {
 		NumCPUs:           vm.vcpu,
 		NumCoresPerSocket: 1,
 		MemoryMB:          vm.memoryMb,
-		MemoryAllocation:  &types.ResourceAllocationInfo{
-			Reservation:     vm.memoryAllocation.reservation,
+		MemoryAllocation: &types.ResourceAllocationInfo{
+			Reservation: vm.memoryAllocation.reservation,
 		},
 	}
 	log.Printf("[DEBUG] virtual machine config spec: %v", configSpec)

@@ -673,4 +673,3 @@ func HandleCreateServerImageSuccessfully(t *testing.T) {
 		w.WriteHeader(http.StatusAccepted)
 	})
 }
-
