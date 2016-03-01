@@ -48,24 +48,6 @@ type memoryAllocation struct {
 }
 
 type virtualMachine struct {
-<<<<<<< HEAD
-	name              string
-	datacenter        string
-	cluster           string
-	resourcePool      string
-	datastore         string
-	vcpu              int
-	memoryMb          int64
-	memoryAllocation  memoryAllocation
-	template          string
-	networkInterfaces []networkInterface
-	hardDisks         []hardDisk
-	gateway           string
-	domain            string
-	timeZone          string
-	dnsSuffixes       []string
-	dnsServers        []string
-=======
 	name                 string
 	folder               string
 	datacenter           string
@@ -74,6 +56,7 @@ type virtualMachine struct {
 	datastore            string
 	vcpu                 int
 	memoryMb             int64
+	memoryAllocation     memoryAllocation
 	template             string
 	networkInterfaces    []networkInterface
 	hardDisks            []hardDisk
@@ -95,7 +78,6 @@ func vmPath(folder string, name string) string {
 		path += folder + "/"
 	}
 	return path + name
->>>>>>> 1448b84b37524eb2f22826dc90ffed65df68e27d
 }
 
 func resourceVSphereVirtualMachine() *schema.Resource {
