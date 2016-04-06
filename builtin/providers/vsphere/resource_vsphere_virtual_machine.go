@@ -399,6 +399,9 @@ func resourceVSphereVirtualMachineCreate(d *schema.ResourceData, meta interface{
 			if i == 0 {
 				if v, ok := disk["template"].(string); ok && v != "" {
 					vm.template = v
+					if v, ok := disk["size"].(int); ok && v != 0 {
+						disks[i].size = int64(v)
+					}
 				} else {
 					if v, ok := disk["size"].(int); ok && v != 0 {
 						disks[i].size = int64(v)
@@ -1155,7 +1158,6 @@ func (vm *virtualMachine) deployVirtualMachine(c *govmomi.Client) error {
 	if err != nil {
 		return err
 	}
-
 	log.Printf("[DEBUG] relocate spec: %v", relocateSpec)
 
 	// network
@@ -1354,24 +1356,26 @@ func (vm *virtualMachine) updateVirtualMachine(client *govmomi.Client) error {
 
 	log.Printf("[DEBUG] hardDisks = %v", vm.hardDisks)
 
+	// select disk
+	devices = devices.SelectByType((*types.VirtualDisk)(nil))
+	log.Printf("[DEBUG] found disk as %#v", devices)
+	// create device config spec
 	var cnt int = 0
+	var deviceChange []types.BaseVirtualDeviceConfigSpec
 	for _, device := range devices {
-		if disk, ok := device.(*types.VirtualDisk); ok {
-			log.Printf("[DEBUG] cnt = %v", cnt)
-			log.Printf("[DEBUG] disk = %#v", disk)
-			log.Printf("[DEBUG] disk size = %#v", disk.CapacityInKB)
-			log.Printf("[DEBUG] disk iops = %#v", disk.StorageIOAllocation.Limit)
+		disk := device.(*types.VirtualDisk)
+		disk.CapacityInKB = int64(vm.hardDisks[cnt].size * 1024 * 1024)
+		disk.StorageIOAllocation.Limit = vm.hardDisks[cnt].iops
 
-			disk.CapacityInKB = int64(vm.hardDisks[cnt].size * 1024 * 1024)
-			disk.StorageIOAllocation.Limit = vm.hardDisks[cnt].iops
-			// err = newVM.EditDevice(context.TODO(), disk)
-			cnt++
+		config := &types.VirtualDeviceConfigSpec{
+			Device:    device,
+			Operation: types.VirtualDeviceConfigSpecOperationEdit,
 		}
+		deviceChange = append(deviceChange, config)
+		cnt++
 	}
-	deviceChange, err := devices.ConfigSpec(types.VirtualDeviceConfigSpecOperationEdit)
-	if err != nil {
-		return err
-	}
+
+	// config spec
 	configSpec := types.VirtualMachineConfigSpec{
 		DeviceChange: deviceChange,
 	}
