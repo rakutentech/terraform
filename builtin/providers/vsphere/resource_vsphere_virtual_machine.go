@@ -79,6 +79,7 @@ func resourceVSphereVirtualMachine() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceVSphereVirtualMachineCreate,
 		Read:   resourceVSphereVirtualMachineRead,
+		Update: resourceVSphereVirtualMachineUpdate,
 		Delete: resourceVSphereVirtualMachineDelete,
 
 		Schema: map[string]*schema.Schema{
@@ -564,7 +565,7 @@ func resourceVSphereVirtualMachineUpdate(d *schema.ResourceData, meta interface{
 			// disk size
 			if v, ok := disk["size"].(int); ok && v != 0 {
 				disks[i].size = int64(v)
-			} else {
+			} else if v, ok := disk["template"].(string); !ok || (ok && v == "") {
 				return fmt.Errorf("If template argument is not specified, size argument is required.")
 			}
 			// disk iops
@@ -1353,9 +1354,12 @@ func (vm *virtualMachine) updateVirtualMachine(client *govmomi.Client) error {
 	var deviceChange []types.BaseVirtualDeviceConfigSpec
 	for _, device := range devices {
 		disk := device.(*types.VirtualDisk)
-		disk.CapacityInKB = int64(vm.hardDisks[cnt].size * 1024 * 1024)
-		disk.StorageIOAllocation.Limit = vm.hardDisks[cnt].iops
-
+		if vm.hardDisks[cnt].size > 0 {
+			disk.CapacityInKB = int64(vm.hardDisks[cnt].size * 1024 * 1024)
+		}
+		if vm.hardDisks[cnt].iops != 0 {
+			disk.StorageIOAllocation.Limit = vm.hardDisks[cnt].iops
+		}
 		config := &types.VirtualDeviceConfigSpec{
 			Device:    device,
 			Operation: types.VirtualDeviceConfigSpecOperationEdit,
