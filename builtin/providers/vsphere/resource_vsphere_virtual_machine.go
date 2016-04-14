@@ -774,9 +774,10 @@ func buildStoragePlacementSpecCreate(f *object.DatacenterFolders, rp *object.Res
 }
 
 // buildStoragePlacementSpecClone builds StoragePlacementSpec for clone action.
-func buildStoragePlacementSpecClone(c *govmomi.Client, f *object.DatacenterFolders, vm *object.VirtualMachine, storagePod *object.StoragePod) types.StoragePlacementSpec {
+func buildStoragePlacementSpecClone(c *govmomi.Client, f *object.DatacenterFolders, vm *object.VirtualMachine, rp *object.ResourcePool, storagePod *object.StoragePod) types.StoragePlacementSpec {
 	vmr := vm.Reference()
 	vmfr := f.VmFolder.Reference()
+	rpr := rp.Reference()
 	spr := storagePod.Reference()
 
 	var o mo.VirtualMachine
@@ -792,7 +793,9 @@ func buildStoragePlacementSpecClone(c *govmomi.Client, f *object.DatacenterFolde
 			StoragePod: &spr,
 		},
 		CloneSpec: &types.VirtualMachineCloneSpec{
-			Location: types.VirtualMachineRelocateSpec{},
+			Location: types.VirtualMachineRelocateSpec{
+				Pool: &rpr,
+			},
 			PowerOn:  false,
 			Template: false,
 		},
@@ -1049,7 +1052,7 @@ func (vm *virtualMachine) deployVirtualMachine(c *govmomi.Client) error {
 			if err != nil {
 				return err
 			}
-			sps := buildStoragePlacementSpecClone(c, dcFolders, template, sp)
+			sps := buildStoragePlacementSpecClone(c, dcFolders, template, resourcePool, sp)
 			datastore, err = findDatastore(c, sps)
 			if err != nil {
 				return err
