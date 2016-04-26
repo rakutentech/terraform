@@ -143,3 +143,48 @@ func (m VirtualDiskManager) DeleteVirtualDisk(ctx context.Context, name string, 
 
 	return NewTask(m.c, res.Returnval), nil
 }
+
+// ConfigSpec creates a virtual machine configuration spec for
+// the specified operation, for the list of devices in the device list.
+func (l VirtualDeviceList) ConfigSpec(op types.VirtualDeviceConfigSpecOperation) ([]types.BaseVirtualDeviceConfigSpec, error) {
+	var fop types.VirtualDeviceConfigSpecFileOperation
+	switch op {
+	case types.VirtualDeviceConfigSpecOperationAdd:
+		fop = types.VirtualDeviceConfigSpecFileOperationCreate
+	case types.VirtualDeviceConfigSpecOperationEdit:
+		fop = types.VirtualDeviceConfigSpecFileOperationReplace
+	case types.VirtualDeviceConfigSpecOperationRemove:
+		fop = types.VirtualDeviceConfigSpecFileOperationDestroy
+	default:
+		panic("unknown op")
+	}
+
+	var res []types.BaseVirtualDeviceConfigSpec
+	for _, device := range l {
+		config := &types.VirtualDeviceConfigSpec{
+			Device:    device,
+			Operation: op,
+		}
+
+		if disk, ok := device.(*types.VirtualDisk); ok {
+			config.FileOperation = fop
+
+			// Special case to attach an existing disk
+			if op == types.VirtualDeviceConfigSpecOperationAdd && disk.CapacityInKB == 0 {
+				childDisk := false
+				if b, ok := disk.Backing.(*types.VirtualDiskFlatVer2BackingInfo); ok {
+					childDisk = b.Parent != nil
+				}
+
+				if !childDisk {
+					// Existing disk, clear file operation
+					config.FileOperation = ""
+				}
+			}
+		}
+
+		res = append(res, config)
+	}
+
+	return res, nil
+}
