@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2014-2015 VMware, Inc. All Rights Reserved.
+Copyright (c) 2014-2016 VMware, Inc. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -313,6 +313,63 @@ func (f *Finder) DatastoreOrDefault(ctx context.Context, path string) (*object.D
 	return f.DefaultDatastore(ctx)
 }
 
+func (f *Finder) DatastoreClusterList(ctx context.Context, path string) ([]*object.StoragePod, error) {
+	es, err := f.find(ctx, f.datastoreFolder, false, path)
+	if err != nil {
+		return nil, err
+	}
+
+	var sps []*object.StoragePod
+	for _, e := range es {
+		ref := e.Object.Reference()
+		if ref.Type == "StoragePod" {
+			sp := object.NewStoragePod(f.client, ref)
+			sp.InventoryPath = e.Path
+			sps = append(sps, sp)
+		}
+	}
+
+	if len(sps) == 0 {
+		return nil, &NotFoundError{"datastore cluster", path}
+	}
+
+	return sps, nil
+}
+
+func (f *Finder) DatastoreCluster(ctx context.Context, path string) (*object.StoragePod, error) {
+	sps, err := f.DatastoreClusterList(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(sps) > 1 {
+		return nil, &MultipleFoundError{"datastore cluster", path}
+	}
+
+	return sps[0], nil
+}
+
+func (f *Finder) DefaultDatastoreCluster(ctx context.Context) (*object.StoragePod, error) {
+	sp, err := f.DatastoreCluster(ctx, "*")
+	if err != nil {
+		return nil, toDefaultError(err)
+	}
+
+	return sp, nil
+}
+
+func (f *Finder) DatastoreClusterOrDefault(ctx context.Context, path string) (*object.StoragePod, error) {
+	if path != "" {
+		sp, err := f.DatastoreCluster(ctx, path)
+		if err != nil {
+			return nil, err
+		}
+		return sp, nil
+	}
+
+	return f.DefaultDatastoreCluster(ctx)
+}
+
 func (f *Finder) ComputeResourceList(ctx context.Context, path string) ([]*object.ComputeResource, error) {
 	es, err := f.find(ctx, f.hostFolder, false, path)
 	if err != nil {
@@ -610,6 +667,27 @@ func (f *Finder) ResourcePoolOrDefault(ctx context.Context, path string) (*objec
 	}
 
 	return f.DefaultResourcePool(ctx)
+}
+
+func (f *Finder) DefaultFolder(ctx context.Context) (*object.Folder, error) {
+	ref, err := f.vmFolder(ctx)
+	if err != nil {
+		return nil, toDefaultError(err)
+	}
+	folder := object.NewFolder(f.client, ref.Reference())
+
+	return folder, nil
+}
+
+func (f *Finder) FolderOrDefault(ctx context.Context, path string) (*object.Folder, error) {
+	if path != "" {
+		folder, err := f.Folder(ctx, path)
+		if err != nil {
+			return nil, err
+		}
+		return folder, nil
+	}
+	return f.DefaultFolder(ctx)
 }
 
 func (f *Finder) VirtualMachineList(ctx context.Context, path string) ([]*object.VirtualMachine, error) {
